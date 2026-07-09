@@ -60,7 +60,8 @@ repo.
      - srsRAN software radio connected to 5G Core.
    * - `OCUDU <https://docs.aetherproject.org/onramp/blueprints.html#ocudu>`__
      - `main-ocudu.yml`
-     - OCUDU software radio connected to 5G Core.
+     - OCUDU software radio connected to 5G Core, with support for
+       simulated UE, UHD-backed radios, and split 7.2 RU deployments.
    * - `N3IWF <https://docs.aetherproject.org/onramp/blueprints.html#non-3gpp-interworking-function>`__
      - `main-n3iwf.yml`
      - N3IWF connected to 5G Core to provide internet access to non-3GPP devices.
@@ -111,6 +112,42 @@ the list is not comprehensive.
    * - `ocudu.simulation`
      - `true`
      - Run UE in simulation mode; set to `false` to deploy OCUDU without the simulated UE.
+   * - `ocudu.docker.preflight.enabled`
+     - `true`
+     - Enable the OCUDU Docker CPU availability preflight check before gNB startup.
+   * - `ocudu.docker.preflight.min_cpus`
+     - `4`
+     - Minimum CPU count that the Docker preflight must observe before the OCUDU gNB starts.
+   * - `ocudu.docker.preflight.probe_image`
+     - `ghcr.io/omec-project/pod-init:rel-1.2.2`
+     - Helper image used by the OCUDU Docker preflight to probe CPU availability inside Docker.
+   * - `ocudu.servers[n].dpdk.enabled`
+     - `false`
+     - Enable per-node DPDK host preparation for OCUDU RU deployments.
+   * - `ocudu.servers[n].dpdk.hugepages`
+     - `2`
+     - Number of 1 GB hugepages reserved on that OCUDU host before starting a DPDK gNB.
+   * - `ocudu.servers[n].dpdk.pf_iface`
+     - `enp81s0f3np3`
+     - Fronthaul PF interface used to create VF 0 for that OCUDU node.
+   * - `ocudu.servers[n].dpdk.du_mac_addr`
+     - `00:33:22:33:00:11`
+     - Optional VF 0 MAC override rendered into the DPDK gNB config.
+   * - `ocudu.servers[n].dpdk.ru_mac_addr`
+     - `70:b3:d5:e1:5e:7e`
+     - RU fronthaul MAC address rendered into the DPDK gNB config.
+   * - `ocudu.servers[n].dpdk.vf_bdf`
+     - `""`
+     - Optional VF 0 PCI BDF override; leave empty to auto-discover it from sysfs.
+   * - `ocudu.servers[n].dpdk.isolated_cpus`
+     - `3-23`
+     - CPU range isolated for the DPDK gNB process on that host.
+   * - `airgapped.enabled`
+     - `false`
+     - Skip gated `apt update` cache refreshes for offline or mirror-backed deployments.
+   * - `airgapped.allow_purge`
+     - `false`
+     - Permit playbooks to remove conflicting packages even in airgapped mode when a role supports that behavior.
    * - `*.helm.local_charts`
      - `false`
      - Loads Helm Charts from public repo; set to `true` to utilize
@@ -166,9 +203,11 @@ substitute custom config files.
    * - `srsran.servers[0].ue_conf`
      - `deps/srsran/roles/uEsimulator/templates/ue_zmq.conf`
    * - `ocudu.servers[0].gnb_conf`
-     - `gnb_zmq.yaml`
+     - `deps/ocudu/roles/gNB/templates/gnb_zmq.yaml`
    * - `ocudu.servers[0].ue_conf`
-     - `ue_zmq.conf`
+     - `deps/ocudu/roles/uEsimulator/templates/ue_zmq.conf`
+   * - `ocudu.servers[0].dpdk.*`
+     - `deps/ocudu/roles/gNB/templates/gnb_dpdk_benetel.yaml`, plus DPDK host settings and RU companion config fragments under `deps/ocudu/roles/dpdk/templates/`
    * - `n3iwf.servers[0].conf_file`
      - `deps/n3iwf/roles/n3iwf/templates/n3iwf-default.yaml`
    * - `ueransim.servers`
@@ -331,9 +370,19 @@ other blueprints.)
    :widths: 25 50
 
    * - `ocudu-gnb-install`
-     - Install container running OCUDU gNB; assumes Core already deployed.
+     - Install Docker prerequisites, apply OCUDU routing, and start the OCUDU gNB; assumes Core already deployed.
    * - `ocudu-gnb-uninstall`
      - Uninstall OCUDU gNB container.
+   * - `ocudu-gnb-start`
+     - Start the OCUDU gNB directly after running the Docker CPU preflight and, when enabled, the same DPDK readiness gate exposed by `ocudu-dpdk-status`.
+   * - `ocudu-gnb-stop`
+     - Stop the OCUDU gNB container without undoing the OCUDU routing changes.
+   * - `ocudu-dpdk-install`
+     - Prepare DPDK prerequisites on OCUDU RU hosts before starting a DPDK-enabled gNB. This step may reboot the host and installs the persistent `vf-bootstrap.service` used to restore VF state across reboots.
+   * - `ocudu-dpdk-status`
+     - Report whether each DPDK-enabled OCUDU host is ready for gNB startup. `ocudu-gnb-start` and `ocudu-gnb-install` already enforce this same readiness gate.
+   * - `ocudu-dpdk-verify`
+     - Verify the live DPDK host state, including services, `vf-bootstrap.service`, hugepages, and VF binding. This is a stronger check than the readiness gate used by `ocudu-gnb-start`.
    * - `ocudu-uesim-start`
      - Start container running the simulated srsRAN UE for OCUDU.
    * - `ocudu-uesim-stop`
